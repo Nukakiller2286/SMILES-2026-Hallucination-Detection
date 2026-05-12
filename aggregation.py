@@ -46,15 +46,15 @@ def aggregate(
     # ------------------------------------------------------------------
 
     # Default: last real token of the final transformer layer.
-    layer = hidden_states[-1]          # (seq_len, hidden_dim)
+    #layer = (hidden_states[-1]+hidden_states[-2]+hidden_states[-3])/3    # (seq_len, hidden_dim)
 
     # Find the index of the last real (non-padding) token.
-    real_positions = attention_mask.nonzero(as_tuple=False)  # (n_real, 1)
-    last_pos = int(real_positions[-1].item())                 # scalar index
+    mask = attention_mask.unsqueeze(-1)
+    token_count = attention_mask.sum().clamp(min=1e-9)
+    f_mid = (hidden_states[12] * mask).sum(dim=0) / token_count  # (896,)
+    f_last = (hidden_states[24] * mask).sum(dim=0) / token_count  # (896,)
 
-    feature = layer[last_pos]          # (hidden_dim,)
-
-    return feature
+    return torch.cat([f_mid, f_last], dim=-1).float()  # (1792,)
     # ------------------------------------------------------------------
 
 
@@ -86,7 +86,17 @@ def extract_geometric_features(
     # ------------------------------------------------------------------
 
     # Placeholder: returns an empty tensor (no geometric features).
-    return torch.zeros(0)
+    layer_last = hidden_states[-1]
+    layer_penultimate = hidden_states[-2]
+
+
+    cos = torch.nn.functional.cosine_similarity(layer_last, layer_penultimate, dim=-1)
+
+
+    avg_cos = (cos * attention_mask).sum() / attention_mask.sum()
+
+    return torch.tensor([avg_cos.item()])
+
 
 
 def aggregation_and_feature_extraction(

@@ -15,7 +15,8 @@ import torch
 import torch.nn as nn
 from sklearn.metrics import f1_score
 from sklearn.preprocessing import StandardScaler
-
+from sklearn.linear_model import LogisticRegression
+from sklearn.decomposition import PCA
 
 class HallucinationProbe(nn.Module):
     """Binary classifier that detects hallucinations from hidden-state features.
@@ -29,6 +30,10 @@ class HallucinationProbe(nn.Module):
         super().__init__()
         self._net: nn.Sequential | None = None  # built lazily in fit()
         self._scaler = StandardScaler()
+        self._clf = LogisticRegression(
+            C=0.1, max_iter=1000, class_weight="balanced", random_state=42
+        )
+        self._pca = PCA(n_components=50, random_state=42)
         self._threshold: float = 0.5  # tuned by fit_hyperparameters()
 
     # ------------------------------------------------------------------
@@ -43,9 +48,14 @@ class HallucinationProbe(nn.Module):
             input_dim: Feature vector dimensionality.
         """
         self._net = nn.Sequential(
-            nn.Linear(input_dim, 256),
+            nn.Linear(input_dim, 128),
+            nn.BatchNorm1d(128),
             nn.ReLU(),
-            nn.Linear(256, 1),
+            nn.Dropout(0.3),
+            nn.Linear(128, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1),
+
         )
 
     # ------------------------------------------------------------------
@@ -65,7 +75,13 @@ class HallucinationProbe(nn.Module):
             )
         return self._net(x).squeeze(-1)
 
-    def fit(self, X: np.ndarray, y: np.ndarray) -> "HallucinationProbe":
+    def fit(self, X, y):
+        X_scaled = self._scaler.fit_transform(X)
+        X_reduced = self._pca.fit_transform(X_scaled)
+        self._clf.fit(X_scaled, y)
+        return self
+
+    def fit2(self, X: np.ndarray, y: np.ndarray) -> "HallucinationProbe":
         """Train the probe on labelled feature vectors.
 
         Scales features with ``StandardScaler``, builds the network if needed,
@@ -96,7 +112,8 @@ class HallucinationProbe(nn.Module):
         # STUDENT: Replace or extend the training loop below.
         # ------------------------------------------------------------------
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
-
+        best_loss = float('inf')
+        patience, no_improve = 20, 0
         self.train()
         for _ in range(200):
             optimizer.zero_grad()
@@ -104,6 +121,13 @@ class HallucinationProbe(nn.Module):
             loss = criterion(logits, y_t)
             loss.backward()
             optimizer.step()
+            if loss.item() < best_loss - 1e-4:
+                best_loss = loss.item()
+                no_improve = 0
+            else:
+                no_improve += 1
+            if no_improve >= patience:
+                break
         # ------------------------------------------------------------------
 
         self.eval()
@@ -158,7 +182,12 @@ class HallucinationProbe(nn.Module):
         """
         return (self.predict_proba(X)[:, 1] >= self._threshold).astype(int)
 
-    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+    def predict_proba(self, X):
+        X_scaled = self._scaler.transform(X)
+        X_reduced = self._pca.transform(X_scaled)
+        return self._clf.predict_proba(X_scaled)
+
+    def predict_proba2(self, X: np.ndarray) -> np.ndarray:
         """Return class probability estimates.
 
         Args:
