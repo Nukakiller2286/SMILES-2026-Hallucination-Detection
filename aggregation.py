@@ -92,7 +92,6 @@ def extract_geometric_features(
 
     cos = torch.nn.functional.cosine_similarity(layer_last, layer_penultimate, dim=-1)
 
-
     avg_cos = (cos * attention_mask).sum() / attention_mask.sum()
 
     return torch.tensor([avg_cos.item()])

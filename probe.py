@@ -78,7 +78,7 @@ class HallucinationProbe(nn.Module):
     def fit(self, X, y):
         X_scaled = self._scaler.fit_transform(X)
         X_reduced = self._pca.fit_transform(X_scaled)
-        self._clf.fit(X_scaled, y)
+        self._clf.fit(X_reduced, y)
         return self
 
     def fit2(self, X: np.ndarray, y: np.ndarray) -> "HallucinationProbe":
@@ -185,7 +185,7 @@ class HallucinationProbe(nn.Module):
     def predict_proba(self, X):
         X_scaled = self._scaler.transform(X)
         X_reduced = self._pca.transform(X_scaled)
-        return self._clf.predict_proba(X_scaled)
+        return self._clf.predict_proba(X_reduced)
 
     def predict_proba2(self, X: np.ndarray) -> np.ndarray:
         """Return class probability estimates.
